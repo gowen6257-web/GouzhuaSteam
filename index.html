@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>钩爪时停 - 蒸汽朋克</title>
+    <title>蒸汽摆荡</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
             overflow: hidden;
-            background: #1a1208;
+            background: #0d0a05;
             font-family: 'Courier New', monospace;
             touch-action: none;
             user-select: none;
@@ -28,13 +28,13 @@
         .hud {
             position: absolute;
             color: #c9a96e;
-            text-shadow: 0 0 8px #c9a96e, 0 0 16px #8b4513;
+            text-shadow: 0 0 8px #c9a96e;
             font-size: 14px;
             font-weight: bold;
         }
         #score { top: 12px; left: 16px; }
         #combo { top: 12px; right: 16px; }
-        #distance { top: 36px; left: 16px; font-size: 12px; color: #a08050; }
+        #best { top: 36px; left: 16px; font-size: 12px; color: #8b6914; }
         #status {
             position: absolute;
             top: 50%; left: 50%;
@@ -45,84 +45,69 @@
             pointer-events: auto;
         }
         #status h1 {
-            font-size: 32px;
-            margin-bottom: 12px;
-            letter-spacing: 4px;
+            font-size: 36px;
+            margin-bottom: 16px;
+            letter-spacing: 6px;
         }
         #status p {
             font-size: 14px;
             color: #a08050;
-            margin-bottom: 24px;
-            line-height: 1.6;
+            margin-bottom: 28px;
+            line-height: 2;
         }
         .btn {
             display: inline-block;
-            padding: 12px 36px;
+            padding: 14px 40px;
             border: 2px solid #c9a96e;
             color: #c9a96e;
-            background: rgba(26, 18, 8, 0.9);
+            background: rgba(13, 10, 5, 0.95);
             font-size: 16px;
             font-family: 'Courier New', monospace;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
             cursor: pointer;
-            pointer-events: auto;
-            transition: all 0.2s;
-            box-shadow: 0 0 12px rgba(201, 169, 110, 0.3), inset 0 0 20px rgba(201, 169, 110, 0.1);
+            transition: all 0.15s;
+            box-shadow: 0 0 16px rgba(201, 169, 110, 0.2);
         }
         .btn:active {
             background: #c9a96e;
-            color: #1a1208;
-            box-shadow: 0 0 24px #c9a96e;
+            color: #0d0a05;
+            box-shadow: 0 0 32px #c9a96e;
         }
-        #tutorial {
+        #hint {
             position: absolute;
-            bottom: 80px;
+            bottom: 60px;
             left: 50%;
             transform: translateX(-50%);
             text-align: center;
-            color: #a08050;
+            color: #6a5a3a;
             font-size: 12px;
-            line-height: 1.8;
+            line-height: 2;
             opacity: 0;
             transition: opacity 1s;
         }
-        #tutorial.show { opacity: 1; }
-        .gear-spin {
-            animation: spin 4s linear infinite;
-        }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        #hint.show { opacity: 1; }
     </style>
 <base target="_blank">
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
     <div id="ui">
-        <div id="score" class="hud">距离: 0m</div>
-        <div id="combo" class="hud">连击: 0</div>
-        <div id="distance" class="hud">最佳: 0m</div>
+        <div id="score" class="hud">0m</div>
+        <div id="combo" class="hud">连击 0</div>
+        <div id="best" class="hud">最佳 0m</div>
         <div id="status">
-            <h1>⚙ 钩爪时停 ⚙</h1>
-            <p>按住屏幕 → 钩爪抓住锚点，时间流动<br>松开手指 → 时间暂停，规划抛物线<br>滑动调整角度 → 再次按住飞出</p>
-            <button class="btn" id="startBtn">开始冒险</button>
+            <h1>⚙ 蒸汽摆荡 ⚙</h1>
+            <p>👆 按住屏幕 → 钩爪抓锚，开始摆荡<br>👈 左右滑动 → 控制摆荡推力方向<br>✋ 松开手指 → 钩爪释放，抛物线飞出</p>
+            <button class="btn" id="startBtn">开始</button>
         </div>
-        <div id="tutorial">
-            <div>👆 按住抓住锚点</div>
-            <div>✋ 松开暂停时间</div>
-            <div>👈 滑动调整角度</div>
+        <div id="hint">
+            <div>按住抓钩 · 滑动控向 · 松手飞出</div>
         </div>
     </div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const ui = {
-    score: document.getElementById('score'),
-    combo: document.getElementById('combo'),
-    distance: document.getElementById('distance'),
-    status: document.getElementById('status'),
-    startBtn: document.getElementById('startBtn'),
-    tutorial: document.getElementById('tutorial')
-};
 
 let W, H, DPR;
 function resize() {
@@ -138,32 +123,49 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ==================== 游戏状态 ====================
-const STATE = { MENU: 0, PLAYING: 1, PAUSED: 2, GAMEOVER: 3 };
-let state = STATE.MENU;
-let frame = 0;
-let score = 0;
-let bestScore = parseInt(localStorage.getItem('grapple_best') || '0');
-let combo = 0;
-let maxCombo = 0;
+// ==================== 常量 ====================
+const GRAVITY = 900;
+const MAX_GRAPPLE_LEN = 280;
+const MIN_GRAPPLE_LEN = 60;
+const ANCHOR_RANGE = 320;
+const SWING_FORCE = 600;      // 滑动产生的摆荡推力
+const RELEASE_BOOST = 1.15;   // 松开时的速度加成
+const AIR_DRAG = 0.999;
+const GROUND_Y = 0;           // 地面Y偏移（从底部算）
 
-// ==================== 蒸汽朋克风格配色 ====================
 const COLORS = {
     bg: '#0d0a05',
-    bgLight: '#1a1208',
+    bgGrid: 'rgba(201, 169, 110, 0.025)',
     brass: '#c9a96e',
     brassDark: '#8b6914',
     brassLight: '#e8d5a3',
     copper: '#b87333',
     rust: '#8b4513',
-    steam: 'rgba(200, 200, 180, 0.15)',
     danger: '#c44',
-    safe: '#6a6',
-    gear: '#5a4a2a',
-    chain: '#7a6a4a'
+    chain: '#6a5a3a',
+    ground: '#151008',
+    steam: 'rgba(200, 200, 180, 0.12)'
 };
 
-// ==================== 粒子系统 ====================
+// ==================== 状态 ====================
+const STATE = { MENU: 0, PLAYING: 1, GAMEOVER: 2 };
+let state = STATE.MENU;
+let frame = 0;
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('swing_best') || '0');
+let combo = 0;
+let maxCombo = 0;
+let cameraX = 0;
+
+// ==================== 输入 ====================
+let isPressed = false;
+let pressStartX = 0;   // 按下时的屏幕X（用于计算滑动偏移）
+let pressStartY = 0;
+let currentTouchX = 0;   // 当前手指位置
+let currentTouchY = 0;
+let slideDelta = 0;    // 滑动偏移量（归一化 -1 到 1）
+
+// ==================== 粒子 ====================
 class Particle {
     constructor(x, y, vx, vy, life, color, size) {
         this.x = x; this.y = y;
@@ -175,13 +177,13 @@ class Particle {
     update(dt) {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
-        this.vy += 30 * dt; // 重力
+        this.vy += 200 * dt;
         this.life -= dt;
-        this.size *= 0.98;
+        this.size *= 0.97;
     }
     draw(ctx) {
-        const alpha = Math.max(0, this.life / this.maxLife);
-        ctx.globalAlpha = alpha;
+        const a = Math.max(0, this.life / this.maxLife);
+        ctx.globalAlpha = a;
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
@@ -190,132 +192,81 @@ class Particle {
     }
 }
 let particles = [];
-function spawnParticles(x, y, count, color, speed) {
+function spawnSparks(x, y, count, color, speed) {
     for (let i = 0; i < count; i++) {
-        const angle = Math.random() * Math.PI * 2;
+        const a = Math.random() * Math.PI * 2;
         const v = Math.random() * speed;
-        particles.push(new Particle(
-            x, y,
-            Math.cos(angle) * v,
-            Math.sin(angle) * v,
-            0.5 + Math.random() * 0.5,
-            color,
-            2 + Math.random() * 4
-        ));
+        particles.push(new Particle(x, y, Math.cos(a)*v, Math.sin(a)*v, 0.4+Math.random()*0.4, color, 2+Math.random()*3));
     }
 }
-function spawnSteam(x, y) {
-    particles.push(new Particle(
-        x + (Math.random() - 0.5) * 10,
-        y,
-        (Math.random() - 0.5) * 20,
-        -30 - Math.random() * 40,
-        1.5 + Math.random(),
-        'rgba(200, 200, 180, 0.2)',
-        8 + Math.random() * 12
-    ));
+function spawnSteam(x, y, vx, vy) {
+    particles.push(new Particle(x, y, vx||0, vy||-40, 1+Math.random(), COLORS.steam, 6+Math.random()*10));
 }
-
-// ==================== 齿轮装饰 ====================
-class Gear {
-    constructor(x, y, r, teeth, speed) {
-        this.x = x; this.y = y;
-        this.r = r; this.teeth = teeth;
-        this.speed = speed;
-        this.angle = Math.random() * Math.PI * 2;
-    }
-    update(dt) {
-        this.angle += this.speed * dt;
-    }
-    draw(ctx) {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-        ctx.strokeStyle = COLORS.gear;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        const innerR = this.r * 0.7;
-        for (let i = 0; i < this.teeth * 2; i++) {
-            const a = (i / (this.teeth * 2)) * Math.PI * 2;
-            const r = i % 2 === 0 ? this.r : innerR;
-            const px = Math.cos(a) * r;
-            const py = Math.sin(a) * r;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.stroke();
-        // 中心孔
-        ctx.beginPath();
-        ctx.arc(0, 0, this.r * 0.2, 0, Math.PI * 2);
-        ctx.stroke();
-        // 辐条
-        for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * Math.PI * 2;
-            ctx.beginPath();
-            ctx.moveTo(Math.cos(a) * this.r * 0.2, Math.sin(a) * this.r * 0.2);
-            ctx.lineTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
-            ctx.stroke();
-        }
-        ctx.restore();
-    }
-}
-let gears = [];
 
 // ==================== 锚点 ====================
 class Anchor {
     constructor(x, y) {
         this.x = x; this.y = y;
         this.baseY = y;
-        this.oscillate = Math.random() * Math.PI * 2;
-        this.oscSpeed = 0.5 + Math.random() * 1;
-        this.oscRange = 15 + Math.random() * 25;
+        this.phase = Math.random() * Math.PI * 2;
+        this.speed = 0.4 + Math.random() * 0.8;
+        this.amp = 10 + Math.random() * 20;
         this.pulse = 0;
+        this.used = false;
     }
     update(dt) {
-        this.oscillate += this.oscSpeed * dt;
-        this.y = this.baseY + Math.sin(this.oscillate) * this.oscRange;
-        this.pulse += dt * 3;
+        this.phase += this.speed * dt;
+        this.y = this.baseY + Math.sin(this.phase) * this.amp;
+        this.pulse += dt * 4;
     }
     draw(ctx) {
-        const pulseR = 3 + Math.sin(this.pulse) * 2;
-        // 外圈黄铜环
+        const pulse = Math.sin(this.pulse) * 3;
+
+        // 外环
         ctx.strokeStyle = COLORS.brass;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, 12 + pulseR, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, 14 + pulse, 0, Math.PI * 2);
         ctx.stroke();
-        // 内圈
+
+        // 内铜
         ctx.fillStyle = COLORS.copper;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, 6, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, 7, 0, Math.PI * 2);
         ctx.fill();
-        // 中心螺丝
+
+        // 螺丝
         ctx.fillStyle = COLORS.brassLight;
         ctx.beginPath();
         ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
         ctx.fill();
-        // 十字槽
+
+        // 十字
         ctx.strokeStyle = COLORS.rust;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(this.x - 2, this.y);
-        ctx.lineTo(this.x + 2, this.y);
-        ctx.moveTo(this.x, this.y - 2);
-        ctx.lineTo(this.x, this.y + 2);
+        ctx.moveTo(this.x-2, this.y); ctx.lineTo(this.x+2, this.y);
+        ctx.moveTo(this.x, this.y-2); ctx.lineTo(this.x, this.y+2);
+        ctx.stroke();
+
+        // 蒸汽管
+        ctx.strokeStyle = 'rgba(139, 105, 20, 0.4)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y + 14);
+        ctx.lineTo(this.x + Math.sin(this.phase*2)*8, this.y + 35);
         ctx.stroke();
     }
 }
 let anchors = [];
 
-// ==================== 障碍物 ====================
+// ==================== 障碍 ====================
 class Obstacle {
     constructor(x, y, w, h, type) {
-        this.x = x; this.y = y;
-        this.w = w; this.h = h;
-        this.type = type; // 'spike', 'gear', 'steam'
-        this.angle = 0;
-        this.rotSpeed = (Math.random() - 0.5) * 4;
+        this.x = x; this.y = y; this.w = w; this.h = h;
+        this.type = type; // 'spike', 'saw', 'steam'
+        this.angle = Math.random() * Math.PI * 2;
+        this.rotSpeed = (type==='saw') ? (3 + Math.random()*4) : 0;
     }
     update(dt) {
         this.angle += this.rotSpeed * dt;
@@ -324,47 +275,49 @@ class Obstacle {
         ctx.save();
         ctx.translate(this.x + this.w/2, this.y + this.h/2);
         ctx.rotate(this.angle);
+
         if (this.type === 'spike') {
             ctx.fillStyle = '#555';
             ctx.strokeStyle = '#777';
             ctx.lineWidth = 1;
-            // 尖刺形状
             ctx.beginPath();
-            ctx.moveTo(-this.w/2, -this.h/2);
-            ctx.lineTo(this.w/2, -this.h/2);
-            ctx.lineTo(0, this.h/2);
+            ctx.moveTo(-this.w/2, this.h/2);
+            ctx.lineTo(this.w/2, this.h/2);
+            ctx.lineTo(0, -this.h/2);
             ctx.closePath();
             ctx.fill(); ctx.stroke();
-            // 金属光泽
-            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            // 高光
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
             ctx.beginPath();
-            ctx.moveTo(-this.w/2 + 2, -this.h/2 + 2);
-            ctx.lineTo(this.w/2 - 2, -this.h/2 + 2);
-            ctx.lineTo(0, this.h/2 - 4);
+            ctx.moveTo(-this.w/2+3, this.h/2-2);
+            ctx.lineTo(this.w/2-3, this.h/2-2);
+            ctx.lineTo(0, -this.h/2+4);
             ctx.closePath();
             ctx.fill();
-        } else if (this.type === 'gear') {
+        } else if (this.type === 'saw') {
+            const teeth = 10;
+            ctx.fillStyle = '#633';
             ctx.strokeStyle = COLORS.danger;
-            ctx.lineWidth = 3;
-            const r = this.w / 2;
-            const teeth = 8;
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            for (let i = 0; i < teeth * 2; i++) {
-                const a = (i / (teeth * 2)) * Math.PI * 2;
-                const rad = i % 2 === 0 ? r : r * 0.7;
-                const px = Math.cos(a) * rad;
-                const py = Math.sin(a) * rad;
-                if (i === 0) ctx.moveTo(px, py);
+            for (let i = 0; i < teeth*2; i++) {
+                const a = (i/(teeth*2)) * Math.PI*2;
+                const r = i%2===0 ? this.w/2 : this.w*0.35;
+                const px = Math.cos(a)*r, py = Math.sin(a)*r;
+                if (i===0) ctx.moveTo(px, py);
                 else ctx.lineTo(px, py);
             }
             ctx.closePath();
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(200, 50, 50, 0.2)';
+            ctx.fill(); ctx.stroke();
+            // 中心
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(0,0, this.w*0.15, 0, Math.PI*2);
             ctx.fill();
         } else if (this.type === 'steam') {
-            ctx.fillStyle = 'rgba(180, 180, 160, 0.15)';
+            ctx.fillStyle = 'rgba(180,180,160,0.12)';
             ctx.beginPath();
-            ctx.arc(0, 0, this.w/2, 0, Math.PI * 2);
+            ctx.arc(0,0, this.w/2, 0, Math.PI*2);
             ctx.fill();
         }
         ctx.restore();
@@ -373,31 +326,30 @@ class Obstacle {
 let obstacles = [];
 
 // ==================== 收集物 ====================
-class Collectible {
+class Coin {
     constructor(x, y) {
         this.x = x; this.y = y;
         this.collected = false;
         this.float = Math.random() * Math.PI * 2;
     }
     update(dt) {
-        this.float += dt * 2;
-        this.y += Math.sin(this.float) * 0.5;
+        this.float += dt * 2.5;
+        this.y += Math.sin(this.float) * 0.6;
     }
     draw(ctx) {
         if (this.collected) return;
         ctx.save();
         ctx.translate(this.x, this.y);
-        // 齿轮金币
+        ctx.rotate(this.float * 0.5);
+        // 齿轮形状
         ctx.fillStyle = COLORS.brass;
         ctx.beginPath();
-        const r = 10;
-        const teeth = 6;
-        for (let i = 0; i < teeth * 2; i++) {
-            const a = (i / (teeth * 2)) * Math.PI * 2;
-            const rad = i % 2 === 0 ? r : r * 0.7;
-            const px = Math.cos(a) * rad;
-            const py = Math.sin(a) * rad;
-            if (i === 0) ctx.moveTo(px, py);
+        const r = 10, teeth = 6;
+        for (let i = 0; i < teeth*2; i++) {
+            const a = (i/(teeth*2)) * Math.PI*2;
+            const rad = i%2===0 ? r : r*0.65;
+            const px = Math.cos(a)*rad, py = Math.sin(a)*rad;
+            if (i===0) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
         }
         ctx.closePath();
@@ -405,184 +357,247 @@ class Collectible {
         ctx.strokeStyle = COLORS.brassLight;
         ctx.lineWidth = 1;
         ctx.stroke();
-        // 中心
         ctx.fillStyle = COLORS.brassLight;
         ctx.beginPath();
-        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+        ctx.arc(0,0, 3.5, 0, Math.PI*2);
         ctx.fill();
         ctx.restore();
     }
 }
-let collectibles = [];
+let coins = [];
 
 // ==================== 玩家 ====================
 const player = {
-    x: 100, y: H / 2,
+    x: 100, y: H/2,
     vx: 0, vy: 0,
-    radius: 12,
+    r: 11,
     grappled: false,
-    grappleAnchor: null,
+    anchor: null,
     grappleLen: 0,
     grappleAngle: 0,
-    grappleSpeed: 0,
-    angle: 0, // 朝向
-    onGround: false,
+    angularVel: 0,
     trail: [],
     invincible: 0,
+    facing: 1, // 1=右, -1=左
 
     reset() {
-        this.x = 80;
-        this.y = H / 2;
+        this.x = 80; this.y = H/2;
         this.vx = 0; this.vy = 0;
         this.grappled = false;
-        this.grappleAnchor = null;
+        this.anchor = null;
         this.trail = [];
         this.invincible = 0;
+        this.facing = 1;
     },
 
-    update(dt, timeFlow) {
-        if (timeFlow <= 0.01) return; // 时间暂停
+    update(dt) {
+        const ground = H - 30;
 
-        const t = dt * timeFlow;
-
-        if (this.grappled && this.grappleAnchor) {
-            // 钩爪摆动物理
-            const ax = this.grappleAnchor.x;
-            const ay = this.grappleAnchor.y;
+        if (this.grappled && this.anchor) {
+            // ========== 摆荡物理 ==========
+            const ax = this.anchor.x;
+            const ay = this.anchor.y;
             const dx = this.x - ax;
             const dy = this.y - ay;
             const dist = Math.sqrt(dx*dx + dy*dy);
 
-            // 摆角
+            // 当前角度（从锚点指向玩家）
             const angle = Math.atan2(dy, dx);
-            // 角加速度 (重力分量)
-            const gravity = 800;
-            const angularAcc = (gravity / this.grappleLen) * Math.sin(angle);
-            this.grappleSpeed += angularAcc * t;
-            this.grappleSpeed *= 0.999; // 微阻尼
 
-            const newAngle = angle + this.grappleSpeed * t;
+            // 重力产生的角加速度
+            const g = GRAVITY;
+            const angularAcc = (g / this.grappleLen) * Math.sin(angle);
+
+            // 滑动输入产生的推力（左右滑动 = 给摆荡加力）
+            // slideDelta: -1(左) 到 1(右)
+            // 当玩家在锚点下方时，左滑=向前推（增加速度），右滑=向后拉
+            // 简化：slideDelta 直接给 angularVel 一个增量
+            if (isPressed && Math.abs(slideDelta) > 0.1) {
+                const pushDir = slideDelta > 0 ? 1 : -1;
+                // 推力大小与当前角速度方向有关，同向加速更大
+                const pushStrength = SWING_FORCE / this.grappleLen * 0.5;
+                this.angularVel += pushDir * pushStrength * Math.abs(slideDelta) * dt;
+            }
+
+            this.angularVel += angularAcc * dt;
+            this.angularVel *= 0.9995; // 极微阻尼
+
+            const newAngle = angle + this.angularVel * dt;
+
+            // 更新位置（保持绳长约束）
             this.x = ax + Math.cos(newAngle) * this.grappleLen;
             this.y = ay + Math.sin(newAngle) * this.grappleLen;
             this.grappleAngle = newAngle;
-            this.angle = newAngle + Math.PI / 2;
 
-            // 速度
-            this.vx = -Math.sin(newAngle) * this.grappleSpeed * this.grappleLen;
-            this.vy = Math.cos(newAngle) * this.grappleSpeed * this.grappleLen;
+            // 从角度计算线速度（用于松开时）
+            this.vx = -Math.sin(newAngle) * this.angularVel * this.grappleLen;
+            this.vy = Math.cos(newAngle) * this.angularVel * this.grappleLen;
 
-        } else {
-            // 自由飞行
-            this.vy += 800 * t; // 重力
-            this.x += this.vx * t;
-            this.y += this.vy * t;
-            this.angle = Math.atan2(this.vy, this.vx);
+            // 面向
+            this.facing = this.vx >= 0 ? 1 : -1;
 
-            // 地面碰撞
-            if (this.y > H - 40) {
-                this.y = H - 40;
-                this.vy = -this.vy * 0.4;
-                this.vx *= 0.8;
-                this.onGround = true;
-                if (Math.abs(this.vy) > 50) {
-                    spawnParticles(this.x, this.y, 5, COLORS.brass, 50);
-                }
-            } else {
-                this.onGround = false;
+            // 蒸汽
+            if (frame % 8 === 0 && Math.abs(this.angularVel) > 1) {
+                spawnSteam(this.x, this.y + 5, -this.vx*0.1, -10);
             }
 
+        } else {
+            // ========== 自由飞行 ==========
+            this.vy += g * dt;
+            this.vx *= AIR_DRAG;
+            this.vy *= AIR_DRAG;
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+
+            // 面向
+            if (Math.abs(this.vx) > 10) this.facing = this.vx > 0 ? 1 : -1;
+
+            // 地面
+            if (this.y > ground - this.r) {
+                this.y = ground - this.r;
+                this.vy = -Math.abs(this.vy) * 0.35;
+                this.vx *= 0.7;
+                if (Math.abs(this.vy) > 80) {
+                    spawnSparks(this.x, ground, 4, COLORS.brass, 40);
+                }
+            }
             // 天花板
-            if (this.y < 30) {
-                this.y = 30;
+            if (this.y < this.r + 30) {
+                this.y = this.r + 30;
                 this.vy = Math.abs(this.vy) * 0.3;
+            }
+
+            // 尝试自动抓锚（如果按住）
+            if (isPressed && !this.grappled) {
+                this.tryGrapple();
+            }
+
+            // 蒸汽尾迹
+            if (frame % 5 === 0 && (Math.abs(this.vx) > 150 || Math.abs(this.vy) > 150)) {
+                spawnSteam(this.x - this.vx*0.02, this.y, 0, 0);
             }
         }
 
         // 拖尾
-        this.trail.push({ x: this.x, y: this.y, time: 0.3 });
-        for (let i = this.trail.length - 1; i >= 0; i--) {
-            this.trail[i].time -= t;
-            if (this.trail[i].time <= 0) this.trail.splice(i, 1);
+        this.trail.push({x: this.x, y: this.y, life: 0.25});
+        for (let i = this.trail.length-1; i >= 0; i--) {
+            this.trail[i].life -= dt;
+            if (this.trail[i].life <= 0) this.trail.splice(i, 1);
         }
 
-        // 无敌时间
-        if (this.invincible > 0) this.invincible -= t;
+        if (this.invincible > 0) this.invincible -= dt;
+    },
 
-        // 蒸汽喷射
-        if (frame % 10 === 0 && (Math.abs(this.vx) > 100 || Math.abs(this.vy) > 100)) {
-            spawnSteam(this.x - Math.cos(this.angle) * 10, this.y - Math.sin(this.angle) * 10);
+    tryGrapple() {
+        let best = null;
+        let bestScore = 999999;
+
+        for (const a of anchors) {
+            const dx = a.x - this.x;
+            const dy = a.y - this.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+
+            // 条件：在范围内、在前方、不太近
+            if (dist < ANCHOR_RANGE && dist > MIN_GRAPPLE_LEN && dx > -30) {
+                // 评分：距离适中 + 前方优先
+                const score = dist + (dx < 0 ? 200 : 0);
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = a;
+                }
+            }
         }
+
+        if (best) {
+            this.grappled = true;
+            this.anchor = best;
+            const dx = this.x - best.x;
+            const dy = this.y - best.y;
+            this.grappleLen = Math.sqrt(dx*dx + dy*dy);
+            this.grappleLen = Math.min(this.grappleLen, MAX_GRAPPLE_LEN);
+            this.grappleAngle = Math.atan2(dy, dx);
+
+            // 初始角速度（从线速度转换）
+            const tangentX = -Math.sin(this.grappleAngle);
+            const tangentY = Math.cos(this.grappleAngle);
+            const speedProj = this.vx * tangentX + this.vy * tangentY;
+            this.angularVel = speedProj / this.grappleLen;
+
+            combo++;
+            maxCombo = Math.max(maxCombo, combo);
+            spawnSparks(best.x, best.y, 10, COLORS.brassLight, 100);
+            for (let i = 0; i < 4; i++) spawnSteam(best.x, best.y + 10, 0, -30);
+        }
+    },
+
+    release() {
+        if (!this.grappled) return;
+        this.grappled = false;
+
+        // 松开时的速度加成（像荡秋千最高点松手）
+        this.vx *= RELEASE_BOOST;
+        this.vy *= RELEASE_BOOST;
+
+        // 如果滑动方向与当前速度同向，额外加速
+        if (isPressed && Math.abs(slideDelta) > 0.3) {
+            const pushDir = slideDelta > 0 ? 1 : -1;
+            const velDir = this.vx > 0 ? 1 : -1;
+            if (pushDir === velDir) {
+                this.vx *= 1.2;
+            }
+        }
+
+        spawnSparks(this.x, this.y, 6, COLORS.brass, 60);
+        spawnSteam(this.x, this.y, this.vx*0.1, this.vy*0.1);
     },
 
     draw(ctx) {
         // 拖尾
         for (let i = 0; i < this.trail.length; i++) {
             const t = this.trail[i];
-            const alpha = t.time / 0.3;
-            ctx.globalAlpha = alpha * 0.4;
+            const a = t.life / 0.25 * 0.35;
+            ctx.globalAlpha = a;
             ctx.fillStyle = COLORS.brass;
             ctx.beginPath();
-            ctx.arc(t.x, t.y, this.radius * alpha, 0, Math.PI * 2);
+            ctx.arc(t.x, t.y, this.r * (0.5 + a*0.5), 0, Math.PI*2);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
 
         // 钩爪线
-        if (this.grappled && this.grappleAnchor) {
+        if (this.grappled && this.anchor) {
             ctx.strokeStyle = COLORS.chain;
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 3]);
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([6, 4]);
             ctx.beginPath();
             ctx.moveTo(this.x, this.y);
-            ctx.lineTo(this.grappleAnchor.x, this.grappleAnchor.y);
+            ctx.lineTo(this.anchor.x, this.anchor.y);
             ctx.stroke();
             ctx.setLineDash([]);
 
             // 链条节点
-            const dx = this.grappleAnchor.x - this.x;
-            const dy = this.grappleAnchor.y - this.y;
+            const dx = this.anchor.x - this.x;
+            const dy = this.anchor.y - this.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
-            const segments = Math.floor(dist / 15);
-            for (let i = 1; i < segments; i++) {
-                const t = i / segments;
-                const px = this.x + dx * t;
-                const py = this.y + dy * t;
-                ctx.fillStyle = COLORS.brassDark;
+            const segs = Math.floor(dist / 14);
+            ctx.fillStyle = COLORS.brassDark;
+            for (let i = 1; i < segs; i++) {
+                const t = i / segs;
                 ctx.beginPath();
-                ctx.arc(px, py, 2, 0, Math.PI * 2);
+                ctx.arc(this.x + dx*t, this.y + dy*t, 2.2, 0, Math.PI*2);
                 ctx.fill();
             }
         }
 
-        // 抛物线预测（暂停时）
-        if (state === STATE.PAUSED && !this.grappled) {
-            ctx.strokeStyle = 'rgba(201, 169, 110, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([4, 4]);
-            ctx.beginPath();
-            let px = this.x, py = this.y;
-            let pvx = this.vx, pvy = this.vy;
-            for (let i = 0; i < 30; i++) {
-                pvy += 800 * 0.016;
-                px += pvx * 0.016;
-                py += pvy * 0.016;
-                if (i === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-                if (py > H - 40) break;
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-
-        // 玩家本体 - 蒸汽朋克小球
+        // 玩家本体
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
+        ctx.scale(this.facing, 1);
 
         // 外圈黄铜
         ctx.fillStyle = COLORS.brass;
         ctx.beginPath();
-        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, this.r, 0, Math.PI*2);
         ctx.fill();
         ctx.strokeStyle = COLORS.brassDark;
         ctx.lineWidth = 2;
@@ -591,463 +606,397 @@ const player = {
         // 内圈铜
         ctx.fillStyle = COLORS.copper;
         ctx.beginPath();
-        ctx.arc(0, 0, this.radius * 0.7, 0, Math.PI * 2);
+        ctx.arc(0, 0, this.r*0.7, 0, Math.PI*2);
         ctx.fill();
 
         // 铆钉
         ctx.fillStyle = COLORS.brassLight;
         for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * Math.PI * 2;
+            const a = (i/4) * Math.PI*2 + frame*0.05;
             ctx.beginPath();
-            ctx.arc(Math.cos(a) * this.radius * 0.45, Math.sin(a) * this.radius * 0.45, 2, 0, Math.PI * 2);
+            ctx.arc(Math.cos(a)*this.r*0.42, Math.sin(a)*this.r*0.42, 1.8, 0, Math.PI*2);
             ctx.fill();
         }
 
-        // 中心玻璃罩
-        ctx.fillStyle = 'rgba(200, 220, 255, 0.3)';
+        // 玻璃罩
+        ctx.fillStyle = 'rgba(200, 230, 255, 0.25)';
         ctx.beginPath();
-        ctx.arc(0, 0, this.radius * 0.3, 0, Math.PI * 2);
+        ctx.arc(0, 0, this.r*0.28, 0, Math.PI*2);
         ctx.fill();
 
-        // 无敌闪烁
-        if (this.invincible > 0 && Math.floor(this.invincible * 10) % 2 === 0) {
-            ctx.strokeStyle = COLORS.brassLight;
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(0, 0, this.radius + 4, 0, Math.PI * 2);
-            ctx.stroke();
-        }
+        // 眼睛（方向指示）
+        ctx.fillStyle = '#ffdd44';
+        ctx.beginPath();
+        ctx.arc(3, -3, 2.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#221100';
+        ctx.beginPath();
+        ctx.arc(3.5, -3, 1.2, 0, Math.PI*2);
+        ctx.fill();
+
+        // 蒸汽喷嘴（后方）
+        ctx.fillStyle = COLORS.rust;
+        ctx.fillRect(-this.r-2, -3, 5, 6);
 
         ctx.restore();
+
+        // 无敌闪烁
+        if (this.invincible > 0 && Math.floor(this.invincible*12)%2===0) {
+            ctx.strokeStyle = COLORS.brassLight;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r+5, 0, Math.PI*2);
+            ctx.stroke();
+        }
     }
 };
 
 // ==================== 输入处理 ====================
-let isPressed = false;
-let touchX = 0, touchY = 0;
-let timeFlow = 1;
-const TARGET_FLOW = 1;
-const PAUSED_FLOW = 0;
-
-function handleStart(x, y) {
+function onStart(x, y) {
     isPressed = true;
-    touchX = x; touchY = y;
-
-    if (state === STATE.PAUSED) {
-        // 从暂停恢复，寻找最近锚点
-        state = STATE.PLAYING;
-        timeFlow = 1;
-
-        // 如果已经在摆动中，继续；否则尝试抓新锚点
-        if (!player.grappled) {
-            tryGrapple();
-        }
-    } else if (state === STATE.PLAYING) {
-        tryGrapple();
-    }
-}
-
-function handleMove(x, y) {
-    touchX = x; touchY = y;
-
-    if (state === STATE.PAUSED && !player.grappled) {
-        // 暂停时滑动调整朝向（影响下次飞行角度）
-        const dx = x - player.x;
-        const dy = y - player.y;
-        const targetAngle = Math.atan2(dy, dx);
-        // 平滑调整速度方向
-        const speed = Math.sqrt(player.vx*player.vx + player.vy*player.vy);
-        player.vx = Math.cos(targetAngle) * speed;
-        player.vy = Math.sin(targetAngle) * speed;
-    }
-}
-
-function handleEnd() {
-    isPressed = false;
+    pressStartX = x;
+    pressStartY = y;
+    currentTouchX = x;
+    currentTouchY = y;
+    slideDelta = 0;
 
     if (state === STATE.PLAYING) {
-        // 松开 = 时间暂停
-        state = STATE.PAUSED;
-        timeFlow = 0;
-        player.grappled = false;
-        player.grappleAnchor = null;
-
-        // 保留当前速度用于下次飞行
-        spawnParticles(player.x, player.y, 3, COLORS.steam, 20);
-    }
-}
-
-function tryGrapple() {
-    // 寻找最近的可用锚点
-    let best = null;
-    let bestDist = 250; // 最大钩爪距离
-
-    for (const a of anchors) {
-        const dx = a.x - player.x;
-        const dy = a.y - player.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < bestDist && a.x > player.x - 50) { // 优先前方锚点
-            bestDist = dist;
-            best = a;
+        if (!player.grappled) {
+            player.tryGrapple();
         }
     }
+}
 
-    if (best) {
-        player.grappled = true;
-        player.grappleAnchor = best;
-        const dx = player.x - best.x;
-        const dy = player.y - best.y;
-        player.grappleLen = Math.sqrt(dx*dx + dy*dy);
-        player.grappleAngle = Math.atan2(dy, dx);
-        player.grappleSpeed = 0;
+function onMove(x, y) {
+    currentTouchX = x;
+    currentTouchY = y;
 
-        // 根据当前速度给初始角速度
-        const tangentX = -Math.sin(player.grappleAngle);
-        const tangentY = Math.cos(player.grappleAngle);
-        const speedProj = player.vx * tangentX + player.vy * tangentY;
-        player.grappleSpeed = speedProj / player.grappleLen;
-
-        combo++;
-        maxCombo = Math.max(maxCombo, combo);
-        spawnParticles(best.x, best.y, 8, COLORS.brassLight, 80);
-
-        // 蒸汽爆发
-        for (let i = 0; i < 5; i++) spawnSteam(best.x, best.y);
+    if (isPressed) {
+        // 计算相对于按下点的水平滑动偏移
+        const dx = x - pressStartX;
+        // 归一化到 -1 ~ 1，基于屏幕宽度的 30%
+        const maxSlide = W * 0.3;
+        slideDelta = Math.max(-1, Math.min(1, dx / maxSlide));
     }
 }
 
-// 触摸事件
+function onEnd() {
+    isPressed = false;
+    slideDelta = 0;
+
+    if (state === STATE.PLAYING) {
+        player.release();
+    }
+}
+
+// 触摸
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     const t = e.touches[0];
-    handleStart(t.clientX, t.clientY);
-}, { passive: false });
+    onStart(t.clientX, t.clientY);
+}, {passive: false});
 
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     const t = e.touches[0];
-    handleMove(t.clientX, t.clientY);
-}, { passive: false });
+    onMove(t.clientX, t.clientY);
+}, {passive: false});
 
 canvas.addEventListener('touchend', e => {
     e.preventDefault();
-    handleEnd();
+    onEnd();
 });
 
-// 鼠标事件（桌面调试）
-canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
-canvas.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
-canvas.addEventListener('mouseup', () => handleEnd());
+// 鼠标
+canvas.addEventListener('mousedown', e => onStart(e.clientX, e.clientY));
+canvas.addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
+canvas.addEventListener('mouseup', () => onEnd());
 
 // ==================== 关卡生成 ====================
-let levelOffset = 0;
-let nextAnchorX = 200;
-let nextObstacleX = 300;
+let nextAnchorX = 250;
+let nextObstacleX = 450;
+let nextCoinX = 350;
 
-function generateLevel() {
-    // 生成锚点
-    while (nextAnchorX < levelOffset + W + 500) {
-        const y = 80 + Math.random() * (H - 160);
+function generate() {
+    const endX = cameraX + W + 600;
+
+    while (nextAnchorX < endX) {
+        const y = 80 + Math.random() * (H - 200);
         anchors.push(new Anchor(nextAnchorX, y));
-        nextAnchorX += 120 + Math.random() * 180;
+        nextAnchorX += 140 + Math.random() * 160;
     }
 
-    // 生成障碍物
-    while (nextObstacleX < levelOffset + W + 500) {
-        const types = ['spike', 'gear', 'steam'];
+    while (nextObstacleX < endX) {
+        const types = ['spike', 'saw', 'steam'];
         const type = types[Math.floor(Math.random() * types.length)];
-        const y = 100 + Math.random() * (H - 200);
-        const size = 30 + Math.random() * 40;
+        const y = 100 + Math.random() * (H - 180);
+        const size = type==='steam' ? 50+Math.random()*30 : 25+Math.random()*25;
         obstacles.push(new Obstacle(nextObstacleX, y, size, size, type));
-        nextObstacleX += 150 + Math.random() * 250;
+        nextObstacleX += 200 + Math.random() * 300;
     }
 
-    // 生成收集物
-    if (Math.random() < 0.3) {
-        const ax = anchors[anchors.length - 1];
-        if (ax) {
-            collectibles.push(new Collectible(ax.x, ax.y + 60 + Math.random() * 40));
-        }
+    while (nextCoinX < endX) {
+        const y = 60 + Math.random() * (H - 140);
+        coins.push(new Coin(nextCoinX, y));
+        nextCoinX += 100 + Math.random() * 200;
     }
 }
 
 function cleanup() {
-    const cutoff = levelOffset - 200;
+    const cutoff = cameraX - 200;
     anchors = anchors.filter(a => a.x > cutoff);
     obstacles = obstacles.filter(o => o.x > cutoff);
-    collectibles = collectibles.filter(c => c.x > cutoff && !c.collected);
+    coins = coins.filter(c => c.x > cutoff && !c.collected);
 }
 
-// ==================== 碰撞检测 ====================
+// ==================== 碰撞 ====================
 function checkCollisions() {
     if (player.invincible > 0) return;
 
-    // 障碍物
     for (const o of obstacles) {
-        const dx = (o.x + o.w/2) - player.x;
-        const dy = (o.y + o.h/2) - player.y;
+        const cx = o.x + o.w/2, cy = o.y + o.h/2;
+        const dx = cx - player.x, dy = cy - player.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < (o.w/2 + player.radius) * 0.8) {
+        const hitR = o.type==='steam' ? o.w/2 : o.w/2 + player.r*0.5;
+
+        if (dist < hitR) {
             if (o.type === 'steam') {
-                // 蒸汽减速
-                player.vx *= 0.5;
-                player.vy *= 0.5;
-                spawnParticles(player.x, player.y, 5, COLORS.steam, 30);
+                player.vx *= 0.6;
+                player.vy *= 0.6;
+                spawnSteam(player.x, player.y, 0, 0);
             } else {
-                // 受伤
                 gameOver();
                 return;
             }
         }
     }
 
-    // 收集物
-    for (const c of collectibles) {
+    for (const c of coins) {
         if (c.collected) continue;
-        const dx = c.x - player.x;
-        const dy = c.y - player.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < player.radius + 12) {
+        const dx = c.x - player.x, dy = c.y - player.y;
+        if (Math.sqrt(dx*dx + dy*dy) < player.r + 12) {
             c.collected = true;
             score += 10 * Math.max(1, combo);
-            spawnParticles(c.x, c.y, 10, COLORS.brassLight, 60);
+            spawnSparks(c.x, c.y, 8, COLORS.brassLight, 50);
         }
     }
 
-    // 掉出屏幕
-    if (player.y > H + 100 || player.x < levelOffset - 100) {
+    if (player.y > H + 80 || player.x < cameraX - 100) {
         gameOver();
     }
 }
 
 // ==================== 游戏流程 ====================
+const uiStatus = document.getElementById('status');
+const uiScore = document.getElementById('score');
+const uiCombo = document.getElementById('combo');
+const uiBest = document.getElementById('best');
+const uiHint = document.getElementById('hint');
+
 function startGame() {
     state = STATE.PLAYING;
     score = 0;
     combo = 0;
     maxCombo = 0;
-    levelOffset = 0;
+    cameraX = 0;
     nextAnchorX = 200;
-    nextObstacleX = 400;
+    nextObstacleX = 450;
+    nextCoinX = 300;
     anchors = [];
     obstacles = [];
-    collectibles = [];
+    coins = [];
     particles = [];
-    gears = [];
-
-    // 背景齿轮
-    for (let i = 0; i < 6; i++) {
-        gears.push(new Gear(
-            Math.random() * W,
-            Math.random() * H,
-            20 + Math.random() * 40,
-            6 + Math.floor(Math.random() * 6),
-            (Math.random() - 0.5) * 0.5
-        ));
-    }
 
     player.reset();
-    generateLevel();
+    generate();
 
-    ui.status.style.display = 'none';
-    ui.tutorial.classList.add('show');
-    setTimeout(() => ui.tutorial.classList.remove('show'), 5000);
-
-    ui.distance.textContent = '最佳: ' + bestScore + 'm';
+    uiStatus.style.display = 'none';
+    uiHint.classList.add('show');
+    setTimeout(() => uiHint.classList.remove('show'), 6000);
+    uiBest.textContent = '最佳 ' + bestScore + 'm';
 }
 
 function gameOver() {
     state = STATE.GAMEOVER;
-    const dist = Math.floor(levelOffset / 10);
+    const dist = Math.floor(player.x / 10);
     if (dist > bestScore) {
         bestScore = dist;
-        localStorage.setItem('grapple_best', bestScore.toString());
+        localStorage.setItem('swing_best', bestScore.toString());
     }
 
-    ui.status.innerHTML = `
-        <h1>⚙ 冒险结束 ⚙</h1>
-        <p>本次距离: ${dist}m<br>最佳纪录: ${bestScore}m<br>最大连击: ${maxCombo}</p>
-        <button class="btn" id="restartBtn">再次挑战</button>
+    uiStatus.innerHTML = `
+        <h1>⚙ 坠落 ⚙</h1>
+        <p>距离 ${dist}m · 最佳 ${bestScore}m<br>连击 ${maxCombo}</p>
+        <button class="btn" id="restartBtn">再来</button>
     `;
-    ui.status.style.display = 'block';
+    uiStatus.style.display = 'block';
     document.getElementById('restartBtn').addEventListener('click', startGame);
 }
 
-ui.startBtn.addEventListener('click', startGame);
+document.getElementById('startBtn').addEventListener('click', startGame);
 
 // ==================== 渲染 ====================
-function drawBackground() {
-    // 深棕背景
+function drawBG() {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, W, H);
 
-    // 网格纹理
-    ctx.strokeStyle = 'rgba(201, 169, 110, 0.03)';
+    // 网格
+    ctx.strokeStyle = COLORS.bgGrid;
     ctx.lineWidth = 1;
-    const gridSize = 40;
-    const offX = -(levelOffset % gridSize);
-    for (let x = offX; x < W; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, H);
-        ctx.stroke();
+    const gs = 45;
+    const ox = -(cameraX * 0.5 % gs);
+    for (let x = ox; x < W; x += gs) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
     }
-    for (let y = 0; y < H; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(W, y);
-        ctx.stroke();
+    for (let y = 0; y < H; y += gs) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
 
     // 远景齿轮（视差）
     ctx.save();
-    ctx.globalAlpha = 0.15;
-    for (const g of gears) {
-        const parallaxX = g.x - levelOffset * 0.1;
-        const wrapX = ((parallaxX % (W + 200)) + (W + 200)) % (W + 200) - 100;
+    ctx.globalAlpha = 0.1;
+    const time = frame * 0.008;
+    for (let i = 0; i < 5; i++) {
+        const gx = ((i * 180 + cameraX * 0.08) % (W + 100)) - 50;
+        const gy = 60 + i * 35;
+        const gr = 25 + i * 8;
         ctx.save();
-        ctx.translate(wrapX, g.y);
-        ctx.rotate(g.angle);
-        ctx.strokeStyle = COLORS.gear;
-        ctx.lineWidth = 1;
+        ctx.translate(gx, gy);
+        ctx.rotate(time * (i%2===0?1:-1) * (0.3+i*0.1));
+        ctx.strokeStyle = COLORS.brassDark;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        const innerR = g.r * 0.7;
-        for (let i = 0; i < g.teeth * 2; i++) {
-            const a = (i / (g.teeth * 2)) * Math.PI * 2;
-            const r = i % 2 === 0 ? g.r : innerR;
-            const px = Math.cos(a) * r;
-            const py = Math.sin(a) * r;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
+        const teeth = 8;
+        for (let j = 0; j < teeth*2; j++) {
+            const a = (j/(teeth*2)) * Math.PI*2;
+            const r = j%2===0 ? gr : gr*0.65;
+            const px = Math.cos(a)*r, py = Math.sin(a)*r;
+            if (j===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
         }
-        ctx.closePath();
-        ctx.stroke();
+        ctx.closePath(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0,0, gr*0.2, 0, Math.PI*2); ctx.stroke();
         ctx.restore();
     }
     ctx.restore();
 
     // 地面
-    ctx.fillStyle = '#151008';
-    ctx.fillRect(0, H - 35, W, 35);
+    const ground = H - 30;
+    ctx.fillStyle = COLORS.ground;
+    ctx.fillRect(0, ground, W, 30);
     ctx.strokeStyle = COLORS.brassDark;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, H - 35);
-    ctx.lineTo(W, H - 35);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, ground); ctx.lineTo(W, ground); ctx.stroke();
 
-    // 地面铆钉
+    // 铆钉
     ctx.fillStyle = COLORS.brassDark;
-    const rivetOff = -(levelOffset % 60);
-    for (let x = rivetOff; x < W; x += 60) {
-        ctx.beginPath();
-        ctx.arc(x, H - 17, 3, 0, Math.PI * 2);
-        ctx.fill();
+    const rivOff = -(cameraX % 55);
+    for (let x = rivOff; x < W; x += 55) {
+        ctx.beginPath(); ctx.arc(x, ground + 15, 3, 0, Math.PI*2); ctx.fill();
     }
 
-    // 管道装饰
-    ctx.strokeStyle = 'rgba(139, 105, 20, 0.3)';
-    ctx.lineWidth = 8;
+    // 管道
+    ctx.strokeStyle = 'rgba(139, 105, 20, 0.25)';
+    ctx.lineWidth = 10;
     ctx.beginPath();
-    ctx.moveTo(0, H - 50);
-    for (let x = 0; x < W; x += 20) {
-        ctx.lineTo(x, H - 50 + Math.sin((x + levelOffset) * 0.02) * 5);
+    ctx.moveTo(0, ground - 18);
+    for (let x = 0; x < W; x += 15) {
+        ctx.lineTo(x, ground - 18 + Math.sin((x+cameraX)*0.015)*4);
     }
     ctx.stroke();
 }
 
-function drawPauseOverlay() {
-    if (state !== STATE.PAUSED) return;
+function drawSlideIndicator() {
+    if (!isPressed || !player.grappled) return;
 
-    // 暗角
-    ctx.fillStyle = 'rgba(10, 8, 4, 0.4)';
-    ctx.fillRect(0, 0, W, H);
+    // 在玩家下方显示滑动方向指示
+    const cx = W / 2;
+    const cy = H - 80;
+    const barW = 120;
+    const barH = 6;
 
-    // 暂停指示
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = COLORS.brassDark;
+    ctx.fillRect(cx - barW/2, cy, barW, barH);
+
+    // 滑块位置
+    const knobX = cx + slideDelta * barW/2;
+    ctx.fillStyle = Math.abs(slideDelta) > 0.3 ? COLORS.brassLight : COLORS.brass;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(knobX, cy + barH/2, 8, 0, Math.PI*2);
+    ctx.fill();
+
+    // 文字
+    ctx.globalAlpha = 0.5;
     ctx.fillStyle = COLORS.brass;
-    ctx.font = 'bold 18px Courier New';
+    ctx.font = '11px Courier New';
     ctx.textAlign = 'center';
-    ctx.fillText('⏸ 时间暂停', W/2, H/2 - 60);
-    ctx.font = '14px Courier New';
-    ctx.fillStyle = COLORS.brassDark;
-    ctx.fillText('滑动调整角度 → 按住飞出', W/2, H/2 - 40);
+    if (slideDelta < -0.3) ctx.fillText('← 后拉', cx, cy - 12);
+    else if (slideDelta > 0.3) ctx.fillText('前推 →', cx, cy - 12);
+    else ctx.fillText('· 平衡 ·', cx, cy - 12);
     ctx.textAlign = 'left';
-}
-
-function drawUI() {
-    ui.score.textContent = '距离: ' + Math.floor(levelOffset / 10) + 'm';
-    ui.combo.textContent = '连击: ' + combo;
+    ctx.globalAlpha = 1;
 }
 
 // ==================== 主循环 ====================
-let lastTime = 0;
-function loop(timestamp) {
-    const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
-    lastTime = timestamp;
+let lastT = 0;
+function loop(ts) {
+    const dt = Math.min((ts - lastT) / 1000, 0.05);
+    lastT = ts;
     frame++;
 
-    if (state === STATE.PLAYING || state === STATE.PAUSED) {
-        const flow = state === STATE.PAUSED ? 0 : 1;
+    if (state === STATE.PLAYING) {
+        // 相机跟随（平滑）
+        const targetCam = player.x - W * 0.25;
+        cameraX += (targetCam - cameraX) * 0.08;
 
-        // 更新
-        if (state === STATE.PLAYING) {
-            levelOffset += 60 * dt; // 相机跟随
-            generateLevel();
-            cleanup();
-        }
-
-        player.update(dt, flow);
+        player.update(dt);
 
         for (const a of anchors) a.update(dt);
         for (const o of obstacles) o.update(dt);
-        for (const c of collectibles) c.update(dt);
-        for (const g of gears) g.update(dt);
+        for (const c of coins) c.update(dt);
 
-        for (let i = particles.length - 1; i >= 0; i--) {
+        for (let i = particles.length-1; i >= 0; i--) {
             particles[i].update(dt);
             if (particles[i].life <= 0) particles.splice(i, 1);
         }
 
-        if (state === STATE.PLAYING) checkCollisions();
+        checkCollisions();
+        generate();
+        cleanup();
 
-        // 相机跟随玩家
-        const targetOffset = player.x - W * 0.3;
-        if (targetOffset > levelOffset) {
-            levelOffset = targetOffset;
-        }
+        // UI
+        uiScore.textContent = Math.floor(player.x / 10) + 'm';
+        uiCombo.textContent = '连击 ' + combo;
 
         // 渲染
-        ctx.save();
-        drawBackground();
+        drawBG();
 
         ctx.save();
-        ctx.translate(-levelOffset, 0);
+        ctx.translate(-cameraX, 0);
 
         for (const a of anchors) a.draw(ctx);
         for (const o of obstacles) o.draw(ctx);
-        for (const c of collectibles) c.draw(ctx);
-
-        // 粒子在玩家后面
+        for (const c of coins) c.draw(ctx);
         for (const p of particles) p.draw(ctx);
-
         player.draw(ctx);
 
         ctx.restore();
-        drawPauseOverlay();
-        ctx.restore();
 
-        drawUI();
+        drawSlideIndicator();
+
     } else if (state === STATE.MENU || state === STATE.GAMEOVER) {
-        drawBackground();
-        for (const g of gears) {
-            g.update(dt);
-            g.draw(ctx);
+        drawBG();
+        // 背景粒子
+        for (let i = particles.length-1; i >= 0; i--) {
+            particles[i].update(dt);
+            if (particles[i].life <= 0) particles.splice(i, 1);
         }
+        for (const p of particles) p.draw(ctx);
     }
 
     requestAnimationFrame(loop);
 }
-
 requestAnimationFrame(loop);
 </script>
 </body>
