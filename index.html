@@ -133,9 +133,14 @@ const RELEASE_BOOST = 1.08;
 const AIR_DRAG = 0.9995;
 const CEILING_Y = 25;
 const FLOOR_Y = H - 25;
-const BOUNCE_DAMPING = 0.6;
-const GROUND_BOOST_VX = 500;  // 地面点击向前冲量
-const GROUND_BOOST_VY = -700; // 地面点击向上冲量
+
+// 链撞地弹起：超大力，更偏向上
+const CHAIN_BOUNCE_VY = -900;   // 向上冲量（更大）
+const CHAIN_BOUNCE_VX_MIN = 200; // 最低向前速度（更小，更偏向上）
+
+// 地面救援：更偏向上
+const GROUND_BOOST_VY = -1000;  // 向上冲量（更大）
+const GROUND_BOOST_VX = 200;    // 向前冲量（更小，更偏向上）
 
 const COLORS = {
     bg: '#0d0a05',
@@ -165,7 +170,7 @@ let cameraX = 0;
 
 // ==================== 输入 ====================
 let isPressed = false;
-let onGround = false;  // 是否在地上
+let onGround = false;
 
 // ==================== 粒子 ====================
 class Particle {
@@ -366,22 +371,17 @@ const player = {
 
     update(dt) {
         if (this.grappled && this.anchor) {
-            // ========== 摆荡物理：基于速度积分，自然向前 ==========
+            // ========== 摆荡物理 ==========
             const ax = this.anchor.x;
             const ay = this.anchor.y;
 
-            // 1. 应用重力
             this.vy += GRAVITY * dt;
-
-            // 2. 空气阻力
             this.vx *= 0.9998;
             this.vy *= 0.9998;
 
-            // 3. 无约束运动一步
             let newX = this.x + this.vx * dt;
             let newY = this.y + this.vy * dt;
 
-            // 4. 约束到绳长
             let dx = newX - ax;
             let dy = newY - ay;
             let dist = Math.sqrt(dx*dx + dy*dy);
@@ -394,7 +394,6 @@ const player = {
                 newY = ay + dy;
             }
 
-            // 5. 计算新速度（切向分量）
             const angle = Math.atan2(dy, dx);
             const tx = -Math.sin(angle);
             const ty = Math.cos(angle);
@@ -422,7 +421,6 @@ const player = {
 
             if (Math.abs(this.vx) > 10) this.facing = this.vx > 0 ? 1 : -1;
 
-            // 按住时尝试抓锚
             if (isPressed && !this.grappled) {
                 this.tryGrapple();
             }
@@ -445,31 +443,25 @@ const player = {
             this.y = FLOOR_Y - this.r;
             onGround = true;
 
-            // 链着的时候落地：断链+使劲向上弹
+            // 链着的时候落地：断链 + 超大力向上弹
             if (this.grappled) {
                 this.grappled = false;
                 this.anchor = null;
-                this.vy = -600;  // 使劲向上弹
-                this.vx = Math.max(this.vx * 1.3, 400); // 向前加速，保证最低速度
-                spawnSparks(this.x, this.y, 12, COLORS.brass, 100);
-                for (let i = 0; i < 8; i++) spawnSteam(this.x, this.y, 0, -60);
-            } else {
-                // 自由飞行落地：普通弹起
-                this.vy = -Math.abs(this.vy) * BOUNCE_DAMPING;
-                this.vx *= 0.85;
-                spawnSparks(this.x, this.y, 3, COLORS.brass, 30);
+                this.vy = CHAIN_BOUNCE_VY;  // -900 超大力向上
+                this.vx = Math.max(this.vx * 0.5, CHAIN_BOUNCE_VX_MIN); // 向前一点，但主要向上
+                spawnSparks(this.x, this.y, 15, COLORS.brass, 120);
+                for (let i = 0; i < 10; i++) spawnSteam(this.x, this.y, 0, -80);
             }
         }
 
-        // ========== 地面点击救援 ==========
-        // 如果停在地上（速度很小），点击给大冲量
+        // ========== 地面救援：停在地上点击 → 超大力向上弹 ==========
         if (onGround && isPressed && !this.grappled) {
             const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
             if (speed < 150) {
-                this.vx = GROUND_BOOST_VX;
-                this.vy = GROUND_BOOST_VY;
-                spawnSparks(this.x, this.y, 15, COLORS.brassLight, 120);
-                for (let i = 0; i < 10; i++) spawnSteam(this.x, this.y, 0, -80);
+                this.vx = GROUND_BOOST_VX;   // 200 轻微向前
+                this.vy = GROUND_BOOST_VY;   // -1000 超大力向上
+                spawnSparks(this.x, this.y, 20, COLORS.brassLight, 150);
+                for (let i = 0; i < 12; i++) spawnSteam(this.x, this.y, 0, -100);
             }
         }
 
