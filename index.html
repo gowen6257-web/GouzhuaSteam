@@ -1,111 +1,4 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>蒸汽摆荡</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body {
-            overflow: hidden;
-            background: #0d0a05;
-            font-family: 'Courier New', monospace;
-            touch-action: none;
-            user-select: none;
-        }
-        #gameCanvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-        }
-        #ui {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 10;
-        }
-        .hud {
-            position: absolute;
-            color: #c9a96e;
-            text-shadow: 0 0 8px #c9a96e;
-            font-size: 14px;
-            font-weight: bold;
-        }
-        #score { top: 12px; left: 16px; }
-        #combo { top: 12px; right: 16px; }
-        #best { top: 36px; left: 16px; font-size: 12px; color: #8b6914; }
-        #status {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #c9a96e;
-            text-shadow: 0 0 12px #c9a96e;
-            pointer-events: auto;
-        }
-        #status h1 {
-            font-size: 36px;
-            margin-bottom: 16px;
-            letter-spacing: 6px;
-        }
-        #status p {
-            font-size: 14px;
-            color: #a08050;
-            margin-bottom: 28px;
-            line-height: 2;
-        }
-        .btn {
-            display: inline-block;
-            padding: 14px 40px;
-            border: 2px solid #c9a96e;
-            color: #c9a96e;
-            background: rgba(13, 10, 5, 0.95);
-            font-size: 16px;
-            font-family: 'Courier New', monospace;
-            letter-spacing: 3px;
-            cursor: pointer;
-            transition: all 0.15s;
-            box-shadow: 0 0 16px rgba(201, 169, 110, 0.2);
-        }
-        .btn:active {
-            background: #c9a96e;
-            color: #0d0a05;
-            box-shadow: 0 0 32px #c9a96e;
-        }
-        #hint {
-            position: absolute;
-            bottom: 60px;
-            left: 50%;
-            transform: translateX(-50%);
-            text-align: center;
-            color: #6a5a3a;
-            font-size: 12px;
-            line-height: 2;
-            opacity: 0;
-            transition: opacity 1s;
-        }
-        #hint.show { opacity: 1; }
-    </style>
-<base target="_blank">
-</head>
-<body>
-    <canvas id="gameCanvas"></canvas>
-    <div id="ui">
-        <div id="score" class="hud">0m</div>
-        <div id="combo" class="hud">连击 0</div>
-        <div id="best" class="hud">最佳 0m</div>
-        <div id="status">
-            <h1>⚙ 蒸汽摆荡 ⚙</h1>
-            <p>👆 按住屏幕 → 钩爪抓锚，开始摆荡<br>👈 左右滑动 → 控制摆荡推力方向<br>✋ 松开手指 → 钩爪释放，抛物线飞出</p>
-            <button class="btn" id="startBtn">开始</button>
-        </div>
-        <div id="hint">
-            <div>按住抓钩 · 滑动控向 · 松手飞出</div>
-        </div>
-    </div>
-
-<script>
+document.addEventListener('DOMContentLoaded', function(){
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -409,12 +302,8 @@ const player = {
             const angularAcc = (g / this.grappleLen) * Math.sin(angle);
 
             // 滑动输入产生的推力（左右滑动 = 给摆荡加力）
-            // slideDelta: -1(左) 到 1(右)
-            // 当玩家在锚点下方时，左滑=向前推（增加速度），右滑=向后拉
-            // 简化：slideDelta 直接给 angularVel 一个增量
             if (isPressed && Math.abs(slideDelta) > 0.1) {
                 const pushDir = slideDelta > 0 ? 1 : -1;
-                // 推力大小与当前角速度方向有关，同向加速更大
                 const pushStrength = SWING_FORCE / this.grappleLen * 0.5;
                 this.angularVel += pushDir * pushStrength * Math.abs(slideDelta) * dt;
             }
@@ -442,8 +331,8 @@ const player = {
             }
 
         } else {
-            // ========== 自由飞行 ==========
-            this.vy += g * dt;
+            // ========== 自由飞行 【已修复 g → GRAVITY】 ==========
+            this.vy += GRAVITY * dt;
             this.vx *= AIR_DRAG;
             this.vy *= AIR_DRAG;
             this.x += this.vx * dt;
@@ -499,7 +388,6 @@ const player = {
 
             // 条件：在范围内、在前方、不太近
             if (dist < ANCHOR_RANGE && dist > MIN_GRAPPLE_LEN && dx > -30) {
-                // 评分：距离适中 + 前方优先
                 const score = dist + (dx < 0 ? 200 : 0);
                 if (score < bestScore) {
                     bestScore = score;
@@ -998,6 +886,5 @@ function loop(ts) {
     requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-</script>
-</body>
-</html>
+
+});
