@@ -97,11 +97,11 @@
         <div id="best" class="hud">最佳 0m</div>
         <div id="status">
             <h1>⚙ 蒸汽摆荡 ⚙</h1>
-            <p>👆 按住屏幕 → 钩爪抓锚，开始摆荡<br>👈 左右滑动 → 控制摆荡推力方向<br>✋ 松开手指 → 钩爪释放，抛物线飞出</p>
+            <p>👆 按住屏幕 → 钩爪抓锚，开始摆荡<br>✋ 松开手指 → 钩爪释放，抛物线飞出<br>⚠️ 落地或撞顶即死亡</p>
             <button class="btn" id="startBtn">开始</button>
         </div>
         <div id="hint">
-            <div>按住抓钩 · 滑动控向 · 松手飞出</div>
+            <div>按住抓钩 · 松手飞出 · 别碰上下边界</div>
         </div>
     </div>
 
@@ -126,12 +126,13 @@ resize();
 
 // ==================== 常量 ====================
 const GRAVITY = 900;
-const MAX_GRAPPLE_LEN = 280;
-const MIN_GRAPPLE_LEN = 60;
-const ANCHOR_RANGE = 320;
-const SWING_FORCE = 600;
-const RELEASE_BOOST = 1.15;
-const AIR_DRAG = 0.999;
+const MAX_GRAPPLE_LEN = 300;
+const MIN_GRAPPLE_LEN = 50;
+const ANCHOR_RANGE = 350;
+const RELEASE_BOOST = 1.1;
+const AIR_DRAG = 0.9995;
+const CEILING_Y = 25;  // 天花板死亡线
+const FLOOR_Y_OFFSET = 25; // 地面死亡线偏移
 
 const COLORS = {
     bg: '#0d0a05',
@@ -144,7 +145,8 @@ const COLORS = {
     danger: '#c44',
     chain: '#6a5a3a',
     ground: '#151008',
-    steam: 'rgba(200, 200, 180, 0.12)'
+    steam: 'rgba(200, 200, 180, 0.12)',
+    dangerLine: 'rgba(200, 60, 60, 0.4)'
 };
 
 // ==================== 状态 ====================
@@ -160,11 +162,6 @@ let cameraX = 0;
 
 // ==================== 输入 ====================
 let isPressed = false;
-let pressStartX = 0;
-let pressStartY = 0;
-let currentTouchX = 0;
-let currentTouchY = 0;
-let slideDelta = 0;
 
 // ==================== 粒子 ====================
 class Particle {
@@ -365,7 +362,6 @@ const player = {
     grappleAngle: 0,
     angularVel: 0,
     trail: [],
-    invincible: 0,
     facing: 1,
 
     reset() {
@@ -375,15 +371,14 @@ const player = {
         this.grappled = false;
         this.anchor = null;
         this.trail = [];
-        this.invincible = 0;
         this.facing = 1;
     },
 
     update(dt) {
-        const ground = H - 30;
+        const floorY = H - FLOOR_Y_OFFSET;
 
         if (this.grappled && this.anchor) {
-            // ========== 摆荡物理 ==========
+            // ========== 摆荡物理（始终向前荡） ==========
             const ax = this.anchor.x;
             const ay = this.anchor.y;
             const dx = this.x - ax;
@@ -394,15 +389,9 @@ const player = {
             // 重力角加速度
             const angularAcc = (GRAVITY / this.grappleLen) * Math.sin(angle);
 
-            // 滑动推力
-            if (isPressed && Math.abs(slideDelta) > 0.1) {
-                const pushDir = slideDelta > 0 ? 1 : -1;
-                const pushStrength = SWING_FORCE / this.grappleLen * 0.5;
-                this.angularVel += pushDir * pushStrength * Math.abs(slideDelta) * dt;
-            }
-
             this.angularVel += angularAcc * dt;
-            this.angularVel *= 0.9995;
+            // 阻尼很小，保持动量
+            this.angularVel *= 0.9998;
 
             const newAngle = angle + this.angularVel * dt;
 
@@ -415,6 +404,7 @@ const player = {
 
             this.facing = this.vx >= 0 ? 1 : -1;
 
+            // 蒸汽
             if (frame % 8 === 0 && Math.abs(this.angularVel) > 1) {
                 spawnSteam(this.x, this.y + 5, -this.vx*0.1, -10);
             }
@@ -428,21 +418,6 @@ const player = {
             this.y += this.vy * dt;
 
             if (Math.abs(this.vx) > 10) this.facing = this.vx > 0 ? 1 : -1;
-
-            // 地面
-            if (this.y > ground - this.r) {
-                this.y = ground - this.r;
-                this.vy = -Math.abs(this.vy) * 0.35;
-                this.vx *= 0.7;
-                if (Math.abs(this.vy) > 80) {
-                    spawnSparks(this.x, ground, 4, COLORS.brass, 40);
-                }
-            }
-            // 天花板
-            if (this.y < this.r + 30) {
-                this.y = this.r + 30;
-                this.vy = Math.abs(this.vy) * 0.3;
-            }
 
             // 按住时尝试抓锚
             if (isPressed && !this.grappled) {
@@ -461,7 +436,17 @@ const player = {
             if (this.trail[i].life <= 0) this.trail.splice(i, 1);
         }
 
-        if (this.invincible > 0) this.invincible -= dt;
+        // ========== 死亡检测：落地或撞顶 ==========
+        if (this.y > floorY - this.r) {
+            this.y = floorY - this.r;
+            gameOver('坠落');
+            return;
+        }
+        if (this.y < CEILING_Y + this.r) {
+            this.y = CEILING_Y + this.r;
+            gameOver('撞顶');
+            return;
+        }
     },
 
     tryGrapple() {
@@ -473,8 +458,9 @@ const player = {
             const dy = a.y - this.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
 
-            if (dist < ANCHOR_RANGE && dist > MIN_GRAPPLE_LEN && dx > -30) {
-                const score = dist + (dx < 0 ? 200 : 0);
+            // 只抓前方的锚点
+            if (dist < ANCHOR_RANGE && dist > MIN_GRAPPLE_LEN && dx > 20) {
+                const score = dist;
                 if (score < bestScore) {
                     bestScore = score;
                     best = a;
@@ -496,6 +482,11 @@ const player = {
             const speedProj = this.vx * tangentX + this.vy * tangentY;
             this.angularVel = speedProj / this.grappleLen;
 
+            // 确保向前荡（角速度为正，即顺时针）
+            if (this.angularVel < 0) {
+                this.angularVel = Math.abs(this.angularVel) * 0.5;
+            }
+
             combo++;
             maxCombo = Math.max(maxCombo, combo);
             spawnSparks(best.x, best.y, 10, COLORS.brassLight, 100);
@@ -508,15 +499,6 @@ const player = {
         this.grappled = false;
         this.vx *= RELEASE_BOOST;
         this.vy *= RELEASE_BOOST;
-
-        if (isPressed && Math.abs(slideDelta) > 0.3) {
-            const pushDir = slideDelta > 0 ? 1 : -1;
-            const velDir = this.vx > 0 ? 1 : -1;
-            if (pushDir === velDir) {
-                this.vx *= 1.2;
-            }
-        }
-
         spawnSparks(this.x, this.y, 6, COLORS.brass, 60);
         spawnSteam(this.x, this.y, this.vx*0.1, this.vy*0.1);
     },
@@ -599,46 +581,19 @@ const player = {
         ctx.fillRect(-this.r-2, -3, 5, 6);
 
         ctx.restore();
-
-        if (this.invincible > 0 && Math.floor(this.invincible*12)%2===0) {
-            ctx.strokeStyle = COLORS.brassLight;
-            ctx.lineWidth = 2.5;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.r+5, 0, Math.PI*2);
-            ctx.stroke();
-        }
     }
 };
 
 // ==================== 输入处理 ====================
 function onStart(x, y) {
     isPressed = true;
-    pressStartX = x;
-    pressStartY = y;
-    currentTouchX = x;
-    currentTouchY = y;
-    slideDelta = 0;
-
     if (state === STATE.PLAYING && !player.grappled) {
         player.tryGrapple();
     }
 }
 
-function onMove(x, y) {
-    currentTouchX = x;
-    currentTouchY = y;
-
-    if (isPressed) {
-        const dx = x - pressStartX;
-        const maxSlide = W * 0.3;
-        slideDelta = Math.max(-1, Math.min(1, dx / maxSlide));
-    }
-}
-
 function onEnd() {
     isPressed = false;
-    slideDelta = 0;
-
     if (state === STATE.PLAYING) {
         player.release();
     }
@@ -651,12 +606,6 @@ canvas.addEventListener('touchstart', e => {
     onStart(t.clientX, t.clientY);
 }, {passive: false});
 
-canvas.addEventListener('touchmove', e => {
-    e.preventDefault();
-    const t = e.touches[0];
-    onMove(t.clientX, t.clientY);
-}, {passive: false});
-
 canvas.addEventListener('touchend', e => {
     e.preventDefault();
     onEnd();
@@ -664,7 +613,6 @@ canvas.addEventListener('touchend', e => {
 
 // 鼠标
 canvas.addEventListener('mousedown', e => onStart(e.clientX, e.clientY));
-canvas.addEventListener('mousemove', e => onMove(e.clientX, e.clientY));
 canvas.addEventListener('mouseup', () => onEnd());
 
 // ==================== 关卡生成 ====================
@@ -676,7 +624,9 @@ function generate() {
     const endX = cameraX + W + 600;
 
     while (nextAnchorX < endX) {
-        const y = 80 + Math.random() * (H - 200);
+        // 锚点分布在安全区域内（避开上下死亡线）
+        const margin = 60;
+        const y = margin + Math.random() * (H - margin * 2);
         anchors.push(new Anchor(nextAnchorX, y));
         nextAnchorX += 140 + Math.random() * 160;
     }
@@ -684,14 +634,16 @@ function generate() {
     while (nextObstacleX < endX) {
         const types = ['spike', 'saw', 'steam'];
         const type = types[Math.floor(Math.random() * types.length)];
-        const y = 100 + Math.random() * (H - 180);
+        const margin = 50;
+        const y = margin + Math.random() * (H - margin * 2);
         const size = type==='steam' ? 50+Math.random()*30 : 25+Math.random()*25;
         obstacles.push(new Obstacle(nextObstacleX, y, size, size, type));
         nextObstacleX += 200 + Math.random() * 300;
     }
 
     while (nextCoinX < endX) {
-        const y = 60 + Math.random() * (H - 140);
+        const margin = 50;
+        const y = margin + Math.random() * (H - margin * 2);
         coins.push(new Coin(nextCoinX, y));
         nextCoinX += 100 + Math.random() * 200;
     }
@@ -706,8 +658,6 @@ function cleanup() {
 
 // ==================== 碰撞 ====================
 function checkCollisions() {
-    if (player.invincible > 0) return;
-
     for (const o of obstacles) {
         const cx = o.x + o.w/2, cy = o.y + o.h/2;
         const dx = cx - player.x, dy = cy - player.y;
@@ -720,7 +670,7 @@ function checkCollisions() {
                 player.vy *= 0.6;
                 spawnSteam(player.x, player.y, 0, 0);
             } else {
-                gameOver();
+                gameOver('撞毁');
                 return;
             }
         }
@@ -736,8 +686,8 @@ function checkCollisions() {
         }
     }
 
-    if (player.y > H + 80 || player.x < cameraX - 100) {
-        gameOver();
+    if (player.x < cameraX - 100) {
+        gameOver('落后');
     }
 }
 
@@ -771,7 +721,8 @@ function startGame() {
     uiBest.textContent = '最佳 ' + bestScore + 'm';
 }
 
-function gameOver() {
+function gameOver(reason) {
+    if (state === STATE.GAMEOVER) return;
     state = STATE.GAMEOVER;
     const dist = Math.floor(player.x / 10);
     if (dist > bestScore) {
@@ -780,7 +731,7 @@ function gameOver() {
     }
 
     uiStatus.innerHTML = `
-        <h1>⚙ 坠落 ⚙</h1>
+        <h1>⚙ ${reason} ⚙</h1>
         <p>距离 ${dist}m · 最佳 ${bestScore}m<br>连击 ${maxCombo}</p>
         <button class="btn" id="restartBtn">再来</button>
     `;
@@ -832,56 +783,47 @@ function drawBG() {
     }
     ctx.restore();
 
-    const ground = H - 30;
+    // 死亡线指示
+    const floorY = H - FLOOR_Y_OFFSET;
+
+    // 天花板死亡线
+    ctx.fillStyle = COLORS.dangerLine;
+    ctx.fillRect(0, 0, W, CEILING_Y);
+    ctx.strokeStyle = COLORS.danger;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath(); ctx.moveTo(0, CEILING_Y); ctx.lineTo(W, CEILING_Y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 地面死亡线
+    ctx.fillStyle = COLORS.dangerLine;
+    ctx.fillRect(0, floorY, W, FLOOR_Y_OFFSET);
+    ctx.strokeStyle = COLORS.danger;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(W, floorY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 地面装饰
     ctx.fillStyle = COLORS.ground;
-    ctx.fillRect(0, ground, W, 30);
+    ctx.fillRect(0, floorY + FLOOR_Y_OFFSET, W, 30);
     ctx.strokeStyle = COLORS.brassDark;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, ground); ctx.lineTo(W, ground); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, floorY + FLOOR_Y_OFFSET); ctx.lineTo(W, floorY + FLOOR_Y_OFFSET); ctx.stroke();
 
     ctx.fillStyle = COLORS.brassDark;
     const rivOff = -(cameraX % 55);
     for (let x = rivOff; x < W; x += 55) {
-        ctx.beginPath(); ctx.arc(x, ground + 15, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, floorY + FLOOR_Y_OFFSET + 15, 3, 0, Math.PI*2); ctx.fill();
     }
 
     ctx.strokeStyle = 'rgba(139, 105, 20, 0.25)';
     ctx.lineWidth = 10;
     ctx.beginPath();
-    ctx.moveTo(0, ground - 18);
+    ctx.moveTo(0, floorY + FLOOR_Y_OFFSET - 18);
     for (let x = 0; x < W; x += 15) {
-        ctx.lineTo(x, ground - 18 + Math.sin((x+cameraX)*0.015)*4);
+        ctx.lineTo(x, floorY + FLOOR_Y_OFFSET - 18 + Math.sin((x+cameraX)*0.015)*4);
     }
     ctx.stroke();
-}
-
-function drawSlideIndicator() {
-    if (!isPressed || !player.grappled) return;
-
-    const cx = W / 2;
-    const cy = H - 80;
-    const barW = 120;
-
-    ctx.globalAlpha = 0.4;
-    ctx.fillStyle = COLORS.brassDark;
-    ctx.fillRect(cx - barW/2, cy, barW, 6);
-
-    const knobX = cx + slideDelta * barW/2;
-    ctx.fillStyle = Math.abs(slideDelta) > 0.3 ? COLORS.brassLight : COLORS.brass;
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.arc(knobX, cy + 3, 8, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = COLORS.brass;
-    ctx.font = '11px Courier New';
-    ctx.textAlign = 'center';
-    if (slideDelta < -0.3) ctx.fillText('← 后拉', cx, cy - 12);
-    else if (slideDelta > 0.3) ctx.fillText('前推 →', cx, cy - 12);
-    else ctx.fillText('· 平衡 ·', cx, cy - 12);
-    ctx.textAlign = 'left';
-    ctx.globalAlpha = 1;
 }
 
 // ==================== 主循环 ====================
@@ -925,8 +867,6 @@ function loop(ts) {
         player.draw(ctx);
 
         ctx.restore();
-
-        drawSlideIndicator();
 
     } else if (state === STATE.MENU || state === STATE.GAMEOVER) {
         drawBG();
