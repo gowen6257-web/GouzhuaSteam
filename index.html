@@ -97,11 +97,11 @@
         <div id="best" class="hud">最佳 0m</div>
         <div id="status">
             <h1>⚙ 蒸汽摆荡 ⚙</h1>
-            <p>👆 按住 → 钩爪抓锚，开始向前摆荡<br>✋ 松开 → 释放飞出，时机决定距离<br>⚠️ 落地或撞顶即死亡</p>
+            <p>👆 按住 → 钩爪抓锚，惯性向前摆荡<br>✋ 松开 → 释放飞出<br>⚠️ 撞顶即死亡，落地弹起</p>
             <button class="btn" id="startBtn">开始</button>
         </div>
         <div id="hint">
-            <div>按住等球荡到前方 → 松手飞出</div>
+            <div>按住抓锚 → 惯性前荡 → 松手飞出</div>
         </div>
     </div>
 
@@ -125,14 +125,15 @@ window.addEventListener('resize', resize);
 resize();
 
 // ==================== 常量 ====================
-const GRAVITY = 1200;           // 重力加速度
-const MAX_GRAPPLE_LEN = 320;
-const MIN_GRAPPLE_LEN = 60;
+const GRAVITY = 1200;
+const MAX_GRAPPLE_LEN = 340;
+const MIN_GRAPPLE_LEN = 50;
 const ANCHOR_RANGE = 400;
-const RELEASE_BOOST = 1.05;     // 松手速度加成
+const RELEASE_BOOST = 1.08;
 const AIR_DRAG = 0.9995;
-const CEILING_Y = 30;           // 天花板死亡线
-const FLOOR_Y = H - 30;         // 地面死亡线
+const CEILING_Y = 25;
+const FLOOR_Y = H - 25;
+const BOUNCE_DAMPING = 0.6;
 
 const COLORS = {
     bg: '#0d0a05',
@@ -198,7 +199,6 @@ function spawnSparks(x, y, count, color, speed) {
         particles.push(new Particle(x, y, Math.cos(a)*v, Math.sin(a)*v, 0.4+Math.random()*0.4, color, 2+Math.random()*3));
     }
 }
-
 function spawnSteam(x, y, vx, vy) {
     particles.push(new Particle(x, y, vx||0, vy||-40, 1+Math.random(), COLORS.steam, 6+Math.random()*10));
 }
@@ -209,8 +209,8 @@ class Anchor {
         this.x = x; this.y = y;
         this.baseY = y;
         this.phase = Math.random() * Math.PI * 2;
-        this.speed = 0.3 + Math.random() * 0.6;
-        this.amp = 8 + Math.random() * 16;
+        this.speed = 0.3 + Math.random() * 0.5;
+        this.amp = 6 + Math.random() * 12;
         this.pulse = 0;
     }
     update(dt) {
@@ -346,16 +346,14 @@ const player = {
     grappled: false,
     anchor: null,
     grappleLen: 0,
-    angle: 0,          // 当前角度（从锚点看，0=正右方，PI/2=正下方，-PI/2=正上方）
-    angularVel: 0,     // 角速度（正=顺时针=向前下方荡）
     trail: [],
     facing: 1,
 
     reset() {
         this.x = 80;
         this.y = H/2;
-        this.vx = 200;    // 初始向右速度
-        this.vy = 0;
+        this.vx = 300;    // 初始向右速度，有惯性
+        this.vy = -100;   // 轻微向上，自然向前上方飞
         this.grappled = false;
         this.anchor = null;
         this.trail = [];
@@ -364,105 +362,55 @@ const player = {
 
     update(dt) {
         if (this.grappled && this.anchor) {
-            // ========== 向前摆荡物理 ==========
-            // 角度定义：0 = 锚点正右方（前方），PI/2 = 正下方，-PI/2 = 正上方
-            // 球从锚点的左后方（角度约 PI ~ PI*1.3）开始，向前下方荡
-
+            // ========== 摆荡物理：基于速度积分，自然向前 ==========
             const ax = this.anchor.x;
             const ay = this.anchor.y;
 
-            // 重力产生的角加速度：让球始终有向前的趋势
-            // 当球在锚点上方（angle < 0），重力拉它向下（增加角速度）
-            // 当球在锚点下方（angle > 0），重力拉它继续向前（增加角速度）
-            // 核心：给角速度一个始终向前的"推力"
+            // 1. 应用重力（向下）
+            this.vy += GRAVITY * dt;
 
-            // 基础重力影响：让球自然下摆
-            const gravityTorque = (GRAVITY / this.grappleLen) * Math.cos(this.angle);
+            // 2. 应用空气阻力
+            this.vx *= 0.9998;
+            this.vy *= 0.9998;
 
-            // 向前的惯性推力：无论在哪都给一个微弱的向前加速
-            const forwardPush = 2.0;
+            // 3. 无约束运动一步
+            let newX = this.x + this.vx * dt;
+            let newY = this.y + this.vy * dt;
 
-            this.angularVel += (gravityTorque + forwardPush) * dt;
-            this.angularVel *= 0.9995; // 微阻尼
+            // 4. 重新约束到绳长（保持与锚点距离不变）
+            let dx = newX - ax;
+            let dy = newY - ay;
+            let dist = Math.sqrt(dx*dx + dy*dy);
 
-            // 更新角度
-            this.angle += this.angularVel * dt;
+            if (dist > 0) {
+                const scale = this.grappleLen / dist;
+                dx *= scale;
+                dy *= scale;
+                newX = ax + dx;
+                newY = ay + dy;
+            }
 
-            // 限制角度范围：不让球往回荡到锚点后面（angle > PI 或 angle < -PI）
-            // 理想范围：-PI/2（上方）到 PI（左后方）之间
-            // 但我们要的是：从后方荡到前方，所以角度从大约 PI 往 0 走
-            // 重新理解：angle = 0 是前方，angle = PI 是后方
-            // 球从后方（angle ~ PI）开始，顺时针（角速度负）往前方（angle ~ 0）荡
-            // 或者从下方（angle ~ PI/2）往前方荡
+            // 5. 计算新速度（切向分量）
+            const angle = Math.atan2(dy, dx);
+            // 切向方向（垂直于绳，顺时针）
+            const tx = -Math.sin(angle);
+            const ty = Math.cos(angle);
+            // 径向方向
+            const rx = Math.cos(angle);
+            const ry = Math.sin(angle);
 
-            // 等等，让我重新设定坐标系：
-            // 锚点在 (ax, ay)，球在 (ax + cos(angle)*len, ay + sin(angle)*len)
-            // angle = 0 → 球在锚点右边（前方）
-            // angle = PI/2 → 球在锚点下方
-            // angle = PI → 球在锚点左边（后方）
-            // angle = -PI/2 → 球在锚点上方
+            // 速度在切向的分量 = 新角速度 * 绳长
+            const vTangent = this.vx * tx + this.vy * ty;
+            // 速度在径向的分量（应该为0，因为绳长固定）
+            const vRadial = this.vx * rx + this.vy * ry;
 
-            // 我们希望球从锚点的后方/下方开始，向前方荡
-            // 即 angle 从 PI/2 ~ PI 往 0 走（顺时针，角速度为负）
-            // 或者从 -PI/2 往 0 走（逆时针，角速度为正）
+            // 消除径向速度，保留切向
+            this.vx = vTangent * tx;
+            this.vy = vTangent * ty;
 
-            // 简化：不管当前角度在哪，给一个始终让球往 angle=0（前方）靠近的力
-            // 但保留动量，让球能荡过前方继续往上
-
-            // 实际上，正确的做法：把重力方向设为"右下方"（同时向下和向右）
-            // 这样球会像真实的摆一样，从后方往前下方荡，然后冲向前方
-
-            // 重新计算：使用复合重力
-            // 重力向下：影响 y 方向
-            // 同时给一个"向前的重力"：让球有向右的趋势
-
-            // 先解除绳约束，应用重力，再重新投影到绳上
-            // 这是更稳定的摆荡模拟
-
-            // 当前位置
-            const px = ax + Math.cos(this.angle) * this.grappleLen;
-            const py = ay + Math.sin(this.angle) * this.grappleLen;
-
-            // 当前速度
-            let vx = -Math.sin(this.angle) * this.angularVel * this.grappleLen;
-            let vy = Math.cos(this.angle) * this.angularVel * this.grappleLen;
-
-            // 应用重力（向下）
-            vy += GRAVITY * dt;
-
-            // 应用"向前重力"（向右，模拟整体倾斜或气流）
-            vx += 300 * dt;
-
-            // 新位置（无约束）
-            let newX = px + vx * dt;
-            let newY = py + vy * dt;
-
-            // 重新约束到绳长
-            let newDx = newX - ax;
-            let newDy = newY - ay;
-            let newDist = Math.sqrt(newDx*newDx + newDy*newDy);
-
-            // 保持绳长
-            const scale = this.grappleLen / newDist;
-            newDx *= scale;
-            newDy *= scale;
-
-            this.x = ax + newDx;
-            this.y = ay + newDy;
-
-            // 计算新角度
-            this.angle = Math.atan2(newDy, newDx);
-
-            // 计算新角速度（从速度在切向的分量）
-            // 切向方向：垂直于绳，顺时针为正
-            const tangentX = -Math.sin(this.angle);
-            const tangentY = Math.cos(this.angle);
-            const tangentSpeed = vx * tangentX + vy * tangentY;
-            this.angularVel = tangentSpeed / this.grappleLen;
-
-            // 保存线速度（用于松开时）
-            this.vx = vx;
-            this.vy = vy;
+            // 更新位置
+            this.x = newX;
+            this.y = newY;
 
             this.facing = this.vx >= 0 ? 1 : -1;
 
@@ -498,14 +446,29 @@ const player = {
             if (this.trail[i].life <= 0) this.trail.splice(i, 1);
         }
 
-        // ========== 死亡检测 ==========
+        // ========== 落地弹起（不死亡） ==========
         if (this.y > FLOOR_Y - this.r) {
             this.y = FLOOR_Y - this.r;
-            gameOver('坠落');
-            return;
+            this.vy = -Math.abs(this.vy) * BOUNCE_DAMPING;
+            this.vx *= 0.85; // 地面摩擦
+
+            // 如果按住且已连接，断链并弹起
+            if (this.grappled) {
+                this.grappled = false;
+                this.anchor = null;
+                this.vy = -400; // 强制向上弹起
+                this.vx *= 1.2; // 向前加速
+                spawnSparks(this.x, this.y, 8, COLORS.brass, 80);
+                for (let i = 0; i < 5; i++) spawnSteam(this.x, this.y, 0, -50);
+            } else {
+                spawnSparks(this.x, this.y, 3, COLORS.brass, 30);
+            }
         }
+
+        // ========== 撞顶死亡 ==========
         if (this.y < CEILING_Y + this.r) {
             this.y = CEILING_Y + this.r;
+            this.vy = Math.abs(this.vy) * 0.3;
             gameOver('撞顶');
             return;
         }
@@ -520,7 +483,7 @@ const player = {
             const dy = a.y - this.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
 
-            // 只抓前方且在一定范围内的锚点
+            // 只抓前方锚点
             if (dist < ANCHOR_RANGE && dist > MIN_GRAPPLE_LEN && dx > 10) {
                 if (dist < bestDist) {
                     bestDist = dist;
@@ -536,17 +499,13 @@ const player = {
             const dy = this.y - best.y;
             this.grappleLen = Math.sqrt(dx*dx + dy*dy);
             this.grappleLen = Math.min(this.grappleLen, MAX_GRAPPLE_LEN);
-            this.angle = Math.atan2(dy, dx);
 
-            // 从当前速度计算初始角速度
-            const tangentX = -Math.sin(this.angle);
-            const tangentY = Math.cos(this.angle);
-            const speedProj = this.vx * tangentX + this.vy * tangentY;
-            this.angularVel = speedProj / this.grappleLen;
-
-            // 确保有向前的动量（如果速度太小，给一个初始推动）
-            if (Math.abs(this.angularVel) < 1.5) {
-                this.angularVel = 2.0; // 给一个初始顺时针速度，向前荡
+            // 保持当前速度，自然惯性会让球向前荡
+            // 如果速度太小，给一个初始前冲
+            const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+            if (speed < 200) {
+                this.vx = 300;
+                this.vy = -100;
             }
 
             combo++;
@@ -559,12 +518,10 @@ const player = {
     release() {
         if (!this.grappled) return;
         this.grappled = false;
+        this.anchor = null;
 
-        // 松开时保持当前速度，给一个微小加成
-        const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
-        const boost = RELEASE_BOOST;
-        this.vx *= boost;
-        this.vy *= boost;
+        this.vx *= RELEASE_BOOST;
+        this.vy *= RELEASE_BOOST;
 
         spawnSparks(this.x, this.y, 6, COLORS.brass, 60);
         spawnSteam(this.x, this.y, this.vx*0.1, this.vy*0.1);
@@ -849,29 +806,33 @@ function drawBG() {
     }
     ctx.restore();
 
-    // 死亡线
+    // 天花板死亡线
     ctx.fillStyle = COLORS.dangerLine;
     ctx.fillRect(0, 0, W, CEILING_Y);
-    ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
-
     ctx.strokeStyle = COLORS.danger;
     ctx.lineWidth = 1;
     ctx.setLineDash([8, 4]);
     ctx.beginPath(); ctx.moveTo(0, CEILING_Y); ctx.lineTo(W, CEILING_Y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 地面（安全区，红色虚线提示）
+    ctx.strokeStyle = 'rgba(201, 169, 110, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 4]);
     ctx.beginPath(); ctx.moveTo(0, FLOOR_Y); ctx.lineTo(W, FLOOR_Y); ctx.stroke();
     ctx.setLineDash([]);
 
     // 地面装饰
     ctx.fillStyle = COLORS.ground;
-    ctx.fillRect(0, FLOOR_Y + 5, W, 25);
+    ctx.fillRect(0, FLOOR_Y, W, 30);
     ctx.strokeStyle = COLORS.brassDark;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, FLOOR_Y + 5); ctx.lineTo(W, FLOOR_Y + 5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, FLOOR_Y); ctx.lineTo(W, FLOOR_Y); ctx.stroke();
 
     ctx.fillStyle = COLORS.brassDark;
     const rivOff = -(cameraX % 55);
     for (let x = rivOff; x < W; x += 55) {
-        ctx.beginPath(); ctx.arc(x, FLOOR_Y + 17, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, FLOOR_Y + 15, 3, 0, Math.PI*2); ctx.fill();
     }
 }
 
